@@ -59,6 +59,7 @@ Further parameters:
  * waitInSeconds - pause the specified time after every request pair (one search+one bulkIndex). 
    This avoids heavy load on the search or on the indexing server/cluster. This way it is very easy
    e.g. to grab even a massive amount of data from your production servers into your local machine.
+ * withParent - whether parent routing should be preserved, if possible (default false)
 
 Hints:
  * the index 'indexnew' and the type 'typenew' should exist.
