@@ -24,5 +24,7 @@ public interface MySearchHit {
 
     long version();
 
+    String parent();
+
     byte[] source();
 }

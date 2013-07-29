@@ -69,6 +69,7 @@ public class ReIndexAction extends BaseRestHandler {
             String searchHost = request.param("searchHost", "localhost");
             boolean localAction = "localhost".equals(searchHost) && searchPort == 9200;
             boolean withVersion = request.paramAsBoolean("withVersion", false);
+            boolean withParent = request.paramAsBoolean("withParent", false);
             int keepTimeInMinutes = request.paramAsInt("keepTimeInMinutes", 30);
             int hitsPerPage = request.paramAsInt("hitsPerPage", 1000);
             float waitInSeconds = request.paramAsFloat("waitInSeconds", 0);
@@ -77,18 +78,18 @@ public class ReIndexAction extends BaseRestHandler {
             MySearchResponse rsp;
             if (localAction) {
                 SearchRequestBuilder srb = createScrollSearch(searchIndexName, searchType, filter,
-                        hitsPerPage, withVersion, keepTimeInMinutes);
+                        hitsPerPage, withVersion, withParent, keepTimeInMinutes);
                 SearchResponse sr = srb.execute().actionGet();
                 rsp = new MySearchResponseES(client, sr, keepTimeInMinutes);
             } else {
                 // TODO make it possible to restrict to a cluster
                 rsp = new MySearchResponseJson(searchHost, searchPort, searchIndexName, searchType, filter,
-                        basicAuthCredentials, hitsPerPage, withVersion, keepTimeInMinutes);
+                        basicAuthCredentials, hitsPerPage, withVersion, withParent, keepTimeInMinutes);
             }
 
             // TODO make async and allow control of process from external (e.g. stopping etc)
             // or just move stuff into a river?
-            reindex(rsp, newIndexName, newType, withVersion, waitInSeconds);
+            reindex(rsp, newIndexName, newType, withVersion, withParent, waitInSeconds);
 
             // TODO reindex again all new items => therefor we need a timestamp field to filter
             // + how to combine with existing filter?
@@ -111,20 +112,24 @@ public class ReIndexAction extends BaseRestHandler {
     }
 
     public SearchRequestBuilder createScrollSearch(String oldIndexName, String oldType, String filter,
-            int hitsPerPage, boolean withVersion, int keepTimeInMinutes) {
+            int hitsPerPage, boolean withVersion, boolean withParent, int keepTimeInMinutes) {
         SearchRequestBuilder srb = client.prepareSearch(oldIndexName).
                 setTypes(oldType).
                 setVersion(withVersion).
                 setSize(hitsPerPage).
                 setSearchType(SearchType.SCAN).
                 setScroll(TimeValue.timeValueMinutes(keepTimeInMinutes));
+        if (withParent) {
+            srb.addField("_source").
+                addField("_parent");
+        }
 
         if (filter != null && !filter.trim().isEmpty())
             srb.setFilter(filter);
         return srb;
     }
 
-    public int reindex(MySearchResponse rsp, String newIndex, String newType, boolean withVersion,
+    public int reindex(MySearchResponse rsp, String newIndex, String newType, boolean withVersion, boolean withParent,
             float waitSeconds) {
         boolean flushEnabled = false;
         long total = rsp.hits().totalHits();
@@ -148,7 +153,7 @@ public class ReIndexAction extends BaseRestHandler {
                 break;
             queryWatch.stop();
             StopWatch updateWatch = new StopWatch().start();
-            failed += bulkUpdate(res, newIndex, newType, withVersion).size();
+            failed += bulkUpdate(res, newIndex, newType, withVersion, withParent).size();
             if (flushEnabled)
                 client.admin().indices().flush(new FlushRequest(newIndex)).actionGet();
 
@@ -168,7 +173,7 @@ public class ReIndexAction extends BaseRestHandler {
     }
 
     Collection<Integer> bulkUpdate(MySearchHits objects, String indexName,
-            String newType, boolean withVersion) {
+            String newType, boolean withVersion, boolean withParent) {
         BulkRequestBuilder brb = client.prepareBulk();
         for (MySearchHit hit : objects.getHits()) {
             if (hit.id() == null || hit.id().isEmpty()) {
@@ -180,7 +185,8 @@ public class ReIndexAction extends BaseRestHandler {
                 IndexRequest indexReq = Requests.indexRequest(indexName).type(newType).id(hit.id()).source(hit.source());
                 if (withVersion)
                     indexReq.version(hit.version());
-
+                if (withParent && !(hit.parent().equals("")))
+                    indexReq.parent(hit.parent());
                 brb.add(indexReq);
             } catch (Exception ex) {
                 logger.warn("Cannot add object:" + hit + " to bulkIndexing action." + ex.getMessage());

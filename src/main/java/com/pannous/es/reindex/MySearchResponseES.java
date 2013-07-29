@@ -109,6 +109,10 @@ public class MySearchResponseES implements MySearchResponse {
             return sh.version();
         }
 
+        @Override public String parent() {
+            return sh.parent();
+        }
+
         @Override public byte[] source() {
             return sh.source();
         }

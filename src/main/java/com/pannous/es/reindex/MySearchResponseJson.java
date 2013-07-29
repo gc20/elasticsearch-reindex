@@ -53,18 +53,20 @@ public class MySearchResponseJson implements MySearchResponse {
     private int port;
     private int keepMin;
     private final boolean withVersion;
+    private final boolean withParent;
     private final long totalHits;
     private long bytes;
     private String credentials = "";
 
     public MySearchResponseJson(String searchHost, int searchPort, String searchIndexName,
             String searchType, String filter, String credentials,
-            int hitsPerPage, boolean withVersion, int keepTimeInMinutes) {
+            int hitsPerPage, boolean withVersion, boolean withParent, int keepTimeInMinutes) {
         if (!searchHost.startsWith("http"))
             searchHost = "http://" + searchHost;
         this.host = searchHost;
         this.port = searchPort;
         this.withVersion = withVersion;
+        this.withParent = withParent;
         keepMin = keepTimeInMinutes;
         bufferedHits = new ArrayList<MySearchHit>(hitsPerPage);
         PoolingClientConnectionManager connManager = new PoolingClientConnectionManager();
@@ -122,12 +124,15 @@ public class MySearchResponseJson implements MySearchResponse {
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject hitJson = arr.getJSONObject(i);
                 long version = -1;
+                String parent = "";
                 String id = hitJson.getString("_id");
                 byte[] source = hitJson.getString("_source").getBytes("UTF-8");
                 if (withVersion && hitJson.has("_version"))
                     version = hitJson.getLong("_version");
+                if (withParent && hitJson.has("fields") && hitJson.getJSONObject("fields").has("_parent"))
+                    parent = hitJson.getJSONObject("fields").getString("_parent");
                 bytes += source.length;
-                MySearchHitJson res = new MySearchHitJson(id, source, version);
+                MySearchHitJson res = new MySearchHitJson(id, source, version, parent);
                 bufferedHits.add(res);
             }
             return bufferedHits.size();
@@ -146,11 +151,13 @@ public class MySearchResponseJson implements MySearchResponse {
         String id;
         byte[] source;
         long version;
+        String parent;
 
-        public MySearchHitJson(String id, byte[] source, long version) {
+        public MySearchHitJson(String id, byte[] source, long version, String parent) {
             this.id = id;
             this.source = source;
             this.version = version;
+            this.parent = parent;
         }
 
         @Override public String id() {
@@ -159,6 +166,10 @@ public class MySearchResponseJson implements MySearchResponse {
 
         @Override public long version() {
             return version;
+        }
+
+        @Override public String parent() {
+            return parent;
         }
 
         @Override public byte[] source() {

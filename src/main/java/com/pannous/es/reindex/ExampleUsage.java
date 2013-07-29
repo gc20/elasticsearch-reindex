@@ -36,6 +36,7 @@ public class ExampleUsage {
         String filter = "{ 'query' : {'query_string' : { 'query' : 'text:blup*'} } }".replaceAll("'", "\"");
         String basicAuthCredentials = "base64_ifrequried=";
         boolean withVersion = false;
+        boolean withParent = false;
         final int hitsPerPage = 500;
         float waitInSeconds = 0.1f;
         // increase if you have lots of things to update
@@ -65,7 +66,7 @@ public class ExampleUsage {
                 for (MySearchHit h : hits.getHits()) {
                     try {
                         String str = new String(h.source(), charset);
-                        RewriteSearchHit newHit = new RewriteSearchHit(h.id(), h.version(), str);
+                        RewriteSearchHit newHit = new RewriteSearchHit(h.id(), h.version(), h.parent(), str);
                         String someField = newHit.get("some_field");
                         if (someField.contains("some content")) {
                             newHit.put("some_field", "IT WORKS!");
@@ -81,12 +82,12 @@ public class ExampleUsage {
         };
         // first query, further scroll-queries in reindex!
         SearchRequestBuilder srb = action.createScrollSearch(searchIndexName, searchType, filter,
-                hitsPerPage, withVersion, keepTimeInMinutes);
+                hitsPerPage, withVersion, withParent, keepTimeInMinutes);
         SearchResponse sr = srb.execute().actionGet();
         MySearchResponse rsp = new MySearchResponseES(client, sr, keepTimeInMinutes);
 
         // now feed and call callback
-        action.reindex(rsp, newIndexName, newType, withVersion, waitInSeconds);
+        action.reindex(rsp, newIndexName, newType, withVersion, withParent, waitInSeconds);
 
         client.close();
     }
@@ -119,11 +120,13 @@ public class ExampleUsage {
 
         String id;
         long version;
+        String parent;
         JSONObject json;
 
-        public RewriteSearchHit(String id, long version, String jsonStr) {
+        public RewriteSearchHit(String id, long version, String parent, String jsonStr) {
             this.id = id;
             this.version = version;
+            this.parent = parent;
             try {
                 json = new JSONObject(jsonStr);
             } catch (JSONException ex) {
@@ -158,6 +161,10 @@ public class ExampleUsage {
 
         @Override public long version() {
             return version;
+        }
+
+        @Override public String parent() {
+            return parent;
         }
 
         @Override public byte[] source() {
